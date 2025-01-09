@@ -1,20 +1,45 @@
 import './App.scss'
-import Card from "./components/Card/Card.jsx";
 import Header from "./components/Header.jsx";
-import Drawer from "./components/Drawer.jsx";
-import {useEffect, useState} from "react";
+import Drawer from "./components/Drawer/Drawer.jsx";
+import {useEffect, useMemo, useState} from "react";
 import axios from "axios";
+import {Navigate, Route, Routes} from "react-router";
+import Home from "./pages/Home.jsx";
+import Favorites from "./pages/Favorites.jsx";
+import {calculatingPrice} from "./utils.js";
+import AppContext from "./Context/Context.jsx";
+import Orders from "./pages/Orders.jsx";
 
+const URL = import.meta.env.VITE_APP_URL
 
 function App() {
 	const [isOpened, setIsOpened] = useState(false)
 	const [items, setItems] = useState([])
 	const [cartItems, setCartItems] = useState([])
+	const [favorites, setFavorites] = useState([])
+	const [searchValue, setSearchValue] = useState("")
+	const [isLoading, setIsLoading] = useState(true)
+	const [orderItems, setOrderItems] = useState([])
+
+	const itemOfSearch = items.filter(item => item.name.toLowerCase().includes(searchValue.toLowerCase()))
+
+	const fullPrice = useMemo(() => calculatingPrice(cartItems), [cartItems])
 
 	useEffect(() => {
-		axios.get("https://674c0d1154e1fca9290b8674.mockapi.io/photo/items").then((response) => {
-			setItems(response.data)
-		})
+		async function getData() {
+			try {
+				const [ itemsResponse, itemsCartResponse] = await Promise.all([axios.get(`${URL}items`), axios.get(`${URL}cart`)])
+				setIsLoading(false)
+
+				setCartItems(itemsCartResponse.data)
+				setItems(itemsResponse.data)
+
+				return [itemsResponse, itemsCartResponse]
+			} catch (e) {
+				alert("Error getting data")
+			}
+		}
+		getData()
 	}, [])
 
 	function handleDrawerOpen() {
@@ -22,35 +47,78 @@ function App() {
 	}
 
 	function onAddToCart(obj) {
-		setCartItems(prevState => {
-			if (prevState.includes(obj)) {
-				return prevState.filter(item => item !== obj)
-			}
-			return [...prevState, obj]
+		const currentItem = cartItems.find(item => item.parentId === obj.id)
+		if (currentItem) {
+			axios.delete(`https://674c0d1154e1fca9290b8674.mockapi.io/photo/cart/${currentItem.id}`).then(({data}) => {
+				setCartItems(prevState => prevState.filter(item => item.parentId !== obj.id))
+			})
+			return;
+		}
+		axios.post("https://674c0d1154e1fca9290b8674.mockapi.io/photo/cart", {
+			...obj,
+			parentId: obj.id
+		}).then(({data}) => {
+			setCartItems(prevState => [...prevState, data])
 		})
 	}
 
+	function onRemoveItem(id) {
+		axios.delete(`https://674c0d1154e1fca9290b8674.mockapi.io/photo/cart/${id}`).then(({data}) => {
+			setCartItems(prevState => prevState.filter(item => item.id !== data.id))
+		})
+	}
+
+	function onFavorite(obj, isFavorite) {
+		if (isFavorite) {
+			setFavorites(prev => [...prev, obj])
+			return;
+		}
+		setFavorites(prev => prev.filter(item => item.id !== obj.id))
+	}
+
+	const isItemAdded = (price) => {
+		return cartItems.some(item => item.price === price)
+	}
+
 	return (
-		<div className="wrapper">
-			{isOpened && <Drawer cartItems={cartItems} handleDrawerOpen={handleDrawerOpen}/>}
-			<Header handleDrawerOpen={handleDrawerOpen}/>
-			<div className="content p-40 ">
-				<div className="d-flex align-center mb-40 justify-between">
-					<h1 className="">Все кроссовки</h1>
-					<div className="search-block d-flex align-center">
-						<img src="/images/search.svg"
-						     alt="search"/>
-						<input type="text"
-						       placeholder="Поиск..."/>
-					</div>
-				</div>
-				<div className="d-flex flex-wrap">
-					{items.map(item => {
-						return <Card key={item.price} item={item} onAddToCart={onAddToCart}/>
-					})}
-				</div>
+		<AppContext.Provider value={{
+			cartItems,
+			favorites,
+			itemOfSearch,
+			isItemAdded,
+			handleDrawerOpen,
+			setCartItems,
+			setOrderItems
+		}}>
+			<div className="wrapper">
+				<Drawer cartItems={cartItems}
+				        onRemove={onRemoveItem}
+				        fullPrice={fullPrice}
+				        opened={isOpened}/>
+				<Header fullPrice={fullPrice}/>
+
+				<Routes>
+					<Route path="/"
+					       element={<Home searchValue={searchValue}
+					                      favorites={favorites}
+					                      itemOfSearch={itemOfSearch}
+					                      cartItems={cartItems}
+					                      setSearchValue={setSearchValue}
+					                      onAddToCart={onAddToCart}
+					                      onFavorite={onFavorite}
+					                      isLoading={isLoading}/>}/>
+					<Route path="/favorites"
+					       element={<Favorites onAddToCart={onAddToCart}
+					                           onFavorite={onFavorite}/>}/>
+					<Route path="/orders"
+					       element={<Orders orderItems={orderItems}/>}/>
+					<Route path="*"
+					       element={<Navigate replace
+					                          to="/"/>}/>
+				</Routes>
+
 			</div>
-		</div>
+		</AppContext.Provider>
 	)
 }
 
