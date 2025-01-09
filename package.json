@@ -2,7 +2,7 @@
   "name": "sneakers",
   "private": true,
   "version": "0.0.0",
-  "homepage": "https://dimarudnevalex.github.io/sneakers",
+  "homepage": "https://DimaRudnevAlex.github.io/sneakers/",
   "type": "module",
   "scripts": {
     "dev": "vite",
